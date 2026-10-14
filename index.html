@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fazil Chat">
+<meta name="theme-color" content="#075e54">
+<title>Fazil Chat</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#ece5dd;color:#111}
+.view{display:none;flex-direction:column;height:100vh;height:100dvh;max-width:640px;margin:0 auto;background:#fff}
+.top{background:#075e54;color:#fff;padding:max(12px,env(safe-area-inset-top)) 14px 12px;display:flex;align-items:center;gap:10px}
+.top h1{margin:0;font-size:19px;flex:1}
+.top small{display:block;font-size:12px;opacity:.8;font-weight:normal}
+.top button{background:none;border:0;color:#fff;font-size:15px}
+.av{width:42px;height:42px;border-radius:50%;background:#b0bec5;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:18px;flex:none}
+#auth{justify-content:center;padding:24px;background:#075e54}
+#auth .card{background:#fff;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px}
+#auth h2{margin:0;color:#075e54;text-align:center}
+input{padding:13px;border:1px solid #ccc;border-radius:10px;font-size:16px;width:100%}
+.btn{background:#25d366;color:#fff;border:0;border-radius:10px;padding:14px;font-size:16px;font-weight:bold}
+.link{background:none;border:0;color:#075e54;font-size:14px}
+#err{color:#c62828;font-size:14px;min-height:18px;text-align:center}
+#demo{display:none;background:#fff3cd;color:#664d03;font-size:12px;padding:8px;border-radius:8px}
+#rows{flex:1;overflow:auto}
+.row{display:flex;gap:12px;padding:12px 14px;border-bottom:1px solid #eee;align-items:center}
+.row .t{flex:1;min-width:0}
+.row b{display:block}
+.row span{color:#667;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.row em{font-size:12px;color:#889;font-style:normal}
+#empty{padding:30px;text-align:center;color:#889}
+#fab{position:absolute;right:18px;bottom:max(20px,env(safe-area-inset-bottom));width:58px;height:58px;border-radius:50%;background:#25d366;border:0;font-size:26px;box-shadow:0 3px 8px #0005}
+#nc{display:none;padding:12px;gap:8px;background:#f0f0f0}
+#msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:5px;background:#ece5dd}
+.b{max-width:78%;padding:7px 10px;border-radius:10px;font-size:16px;word-wrap:break-word;white-space:pre-wrap;box-shadow:0 1px 1px #0002}
+.b small{display:block;text-align:right;font-size:11px;color:#667;margin-top:2px}
+.in{background:#fff;align-self:flex-start}
+.out{background:#dcf8c6;align-self:flex-end}
+.bar{display:flex;gap:8px;padding:8px 8px max(8px,env(safe-area-inset-bottom));background:#f0f0f0}
+.bar input{border-radius:22px;border:0}
+.bar button{width:46px;height:46px;border-radius:50%;border:0;background:#075e54;color:#fff;font-size:20px;flex:none}
+</style>
+</head>
+<body>
+
+<div class="view" id="auth">
+  <div class="card">
+    <h2>Fazil Chat</h2>
+    <div id="demo">Demo mode: messages stay on this device. Add your Firebase config in the file to chat across phones.</div>
+    <input id="phone" type="tel" placeholder="Phone with country code, e.g. +971501234567">
+    <input id="name" placeholder="Your name">
+    <input id="pin" type="password" inputmode="numeric" placeholder="PIN (4 to 8 digits)">
+    <div id="err"></div>
+    <button class="btn" id="go" onclick="submitAuth()">REGISTER</button>
+    <button class="link" id="sw" onclick="toggleMode()">Already registered? Login</button>
+  </div>
+</div>
+
+<div class="view" id="list" style="position:relative">
+  <div class="top"><h1>Chats<small id="me"></small></h1><button onclick="logout()">Logout</button></div>
+  <div id="nc"><input id="ncp" type="tel" placeholder="Friend's number with country code"><button class="btn" onclick="startChat()">GO</button></div>
+  <div id="rows"></div>
+  <button id="fab" onclick="toggleNew()">💬</button>
+</div>
+
+<div class="view" id="chat">
+  <div class="top"><button onclick="showList()" style="font-size:22px">←</button><div class="av" id="cav"></div><h1 id="cname"></h1></div>
+  <div id="msgs"></div>
+  <div class="bar"><input id="msg" placeholder="Message" autocomplete="off"><button onclick="sendMsg()">➤</button></div>
+</div>
+
+<script>
+/* ===== Paste your Firebase config here (Firebase console > Project settings > Web app) ===== */
+var FIREBASE_CONFIG={apiKey:"",authDomain:"",projectId:"",storageBucket:"",messagingSenderId:"",appId:""};
+/* ========================================================================================== */
+
+var useFB=!!FIREBASE_CONFIG.apiKey,data=null,me=null,cur=null,unsubList=null,unsubMsgs=null,regMode=true;
+function $(i){return document.getElementById(i);}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+function show(v){['auth','list','chat'].forEach(function(x){$(x).style.display=x===v?'flex':'none';});}
+function err(t){$('err').textContent=t;}
+var DEFAULT_CC='971'; /* numbers starting with 0 get this country code (971 = UAE) */
+function norm(p){p=p.replace(/[^\d+]/g,'');if(p.indexOf('00')===0)p='+'+p.slice(2);else if(p.charAt(0)==='0')p='+'+DEFAULT_CC+p.slice(1);else if(p.charAt(0)!=='+')p='+'+p;return /^\+\d{7,15}$/.test(p)?p:null;}
+function hm(t){var d=new Date(t);return('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
+function cid(a,b){return[a,b].sort().join('_');}
+function sha(t){
+  if(!(window.crypto&&crypto.subtle))return Promise.resolve('p:'+t);
+  return crypto.subtle.digest('SHA-256',new TextEncoder().encode('fc|'+t)).then(function(b){
+    return Array.prototype.map.call(new Uint8Array(b),function(x){return('0'+x.toString(16)).slice(-2);}).join('');
+  });
+}
+
+/* ---------- Data layer: Firebase (real) ---------- */
+function fbLayer(db){return{
+  getUser:function(p){return db.collection('users').doc(p).get().then(function(d){return d.exists?d.data():null;});},
+  setUser:function(p,u){return db.collection('users').doc(p).set(u);},
+  listenChats:function(m,cb){return db.collection('chats').where('members','array-contains',m).onSnapshot(function(s){
+    cb(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));},function(e){alert('Database error: '+e.message);});},
+  listenMsgs:function(id,cb){return db.collection('chats').doc(id).collection('messages').orderBy('ts').limitToLast(200).onSnapshot(function(s){
+    cb(s.docs.map(function(d){return d.data();}));},function(e){alert('Database error: '+e.message);});},
+  send:function(id,from,to,toName,text){
+    var ts=Date.now(),n={};n[from.phone]=from.name;n[to]=toName;
+    var ref=db.collection('chats').doc(id),b=db.batch();
+    b.set(ref,{members:[from.phone,to],names:n,last:text,lastTs:ts},{merge:true});
+    b.set(ref.collection('messages').doc(),{from:from.phone,text:text,ts:ts});
+    return b.commit();}
+};}
+
+/* ---------- Data layer: local demo (same device only) ---------- */
+var subs=[];
+function ls(){return JSON.parse(localStorage.getItem('fc_db')||'{"users":{},"chats":{},"msgs":{}}');}
+function ss(d){localStorage.setItem('fc_db',JSON.stringify(d));fire();}
+function fire(){subs.slice().forEach(function(f){f();});}
+window.addEventListener('storage',function(e){if(e.key==='fc_db')fire();});
+function addSub(f){subs.push(f);f();return function(){subs=subs.filter(function(x){return x!==f;});};}
+var localLayer={
+  getUser:function(p){return Promise.resolve(ls().users[p]||null);},
+  setUser:function(p,u){var d=ls();d.users[p]=u;ss(d);return Promise.resolve();},
+  listenChats:function(m,cb){return addSub(function(){var d=ls();
+    cb(Object.keys(d.chats).map(function(k){return Object.assign({id:k},d.chats[k]);}).filter(function(c){return c.members.indexOf(m)>-1;}));});},
+  listenMsgs:function(id,cb){return addSub(function(){cb(ls().msgs[id]||[]);});},
+  send:function(id,from,to,toName,text){
+    var d=ls(),ts=Date.now(),n={};n[from.phone]=from.name;n[to]=toName;
+    d.chats[id]={members:[from.phone,to],names:n,last:text,lastTs:ts};
+    (d.msgs[id]=d.msgs[id]||[]).push({from:from.phone,text:text,ts:ts});ss(d);return Promise.resolve();}
+};
+
+/* ---------- Auth ---------- */
+function toggleMode(){
+  regMode=!regMode;
+  $('name').style.display=regMode?'block':'none';
+  $('go').textContent=regMode?'REGISTER':'LOGIN';
+  $('sw').textContent=regMode?'Already registered? Login':'New here? Register';
+  err('');
+}
+function submitAuth(){
+  var p=norm($('phone').value),pin=$('pin').value.trim(),nm=$('name').value.trim();
+  if(!p){err('Enter number with country code, e.g. +971501234567');return;}
+  if(!/^\d{4,8}$/.test(pin)){err('PIN must be 4 to 8 digits');return;}
+  if(regMode&&!nm){err('Enter your name');return;}
+  err('');
+  sha(p+'|'+pin).then(function(h){
+    return data.getUser(p).then(function(u){
+      if(regMode){
+        if(u){err('This number is already registered. Please login.');return;}
+        return data.setUser(p,{name:nm,pin:h,created:Date.now()}).then(function(){enter(p,nm);});
+      }
+      if(!u||u.pin!==h){err('Wrong number or PIN');return;}
+      enter(p,u.name);
+    });
+  }).catch(function(e){err('Error: '+e.message);});
+}
+function enter(p,nm){me={phone:p,name:nm};localStorage.setItem('fc_me',JSON.stringify(me));$('pin').value='';showList();}
+function logout(){
+  localStorage.removeItem('fc_me');me=null;
+  if(unsubList)unsubList();if(unsubMsgs)unsubMsgs();unsubList=unsubMsgs=null;
+  show('auth');
+}
+
+/* ---------- Chat list ---------- */
+function showList(){
+  if(unsubMsgs){unsubMsgs();unsubMsgs=null;}
+  show('list');$('me').textContent=me.name+'  '+me.phone+(useFB?'  (online)':'  (DEMO MODE: this phone only)');
+  if(unsubList)unsubList();
+  unsubList=data.listenChats(me.phone,renderList);
+}
+function renderList(chats){
+  var box=$('rows');box.innerHTML='';
+  if(!chats.length){box.appendChild(el('div',null,'No chats yet. Tap 💬 and enter a friend\'s number.')).id='empty';return;}
+  chats.sort(function(a,b){return b.lastTs-a.lastTs;});
+  chats.forEach(function(c){
+    var other=c.members.filter(function(x){return x!==me.phone;})[0],nm=(c.names&&c.names[other])||other;
+    var r=el('div','row'),t=el('div','t');
+    r.appendChild(el('div','av',nm.charAt(0).toUpperCase()));
+    t.appendChild(el('b',null,nm));t.appendChild(el('span',null,c.last||''));
+    r.appendChild(t);r.appendChild(el('em',null,hm(c.lastTs)));
+    r.onclick=function(){openChat(other,nm);};
+    box.appendChild(r);
+  });
+}
+function toggleNew(){var n=$('nc');n.style.display=n.style.display==='flex'?'none':'flex';}
+function startChat(){
+  var p=norm($('ncp').value);
+  if(!p){alert('Enter number with country code, e.g. +971501234567');return;}
+  if(p===me.phone){alert('That is your own number');return;}
+  data.getUser(p).then(function(u){
+    if(!u){alert(p+' is not registered yet. Check the number, or ask your friend to register first.');return;}
+    $('ncp').value='';$('nc').style.display='none';openChat(p,u.name);
+  }).catch(function(e){alert('Error: '+e.message);});
+}
+
+/* ---------- Conversation ---------- */
+function openChat(other,name){
+  cur={id:cid(me.phone,other),other:other,name:name};
+  show('chat');$('cname').textContent=name;$('cav').textContent=name.charAt(0).toUpperCase();
+  if(unsubList){unsubList();unsubList=null;}
+  if(unsubMsgs)unsubMsgs();
+  unsubMsgs=data.listenMsgs(cur.id,renderMsgs);
+}
+function renderMsgs(list){
+  var box=$('msgs');box.innerHTML='';
+  list.forEach(function(m){
+    var b=el('div','b '+(m.from===me.phone?'out':'in'),m.text);
+    b.appendChild(el('small',null,hm(m.ts)));box.appendChild(b);
+  });
+  box.scrollTop=box.scrollHeight;
+}
+function sendMsg(){
+  var t=$('msg').value.trim();if(!t||!cur)return;
+  $('msg').value='';
+  data.send(cur.id,me,cur.other,cur.name,t).catch(function(e){alert('Send failed: '+e.message);});
+}
+$('msg').addEventListener('keydown',function(e){if(e.key==='Enter')sendMsg();});
+
+/* ---------- Start ---------- */
+function boot(){
+  var s=localStorage.getItem('fc_me');
+  if(s){me=JSON.parse(s);showList();}else show('auth');
+}
+function loadJs(u){return new Promise(function(ok,bad){var s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=bad;document.head.appendChild(s);});}
+if(useFB){
+  var B='https://www.gstatic.com/firebasejs/10.12.2/';
+  loadJs(B+'firebase-app-compat.js').then(function(){return loadJs(B+'firebase-firestore-compat.js');}).then(function(){
+    firebase.initializeApp(FIREBASE_CONFIG);data=fbLayer(firebase.firestore());boot();
+  }).catch(function(){alert('Could not load Firebase. Check your internet.');});
+}else{data=localLayer;$('demo').style.display='block';boot();}
+</script>
+</body>
+</html>
